@@ -1,0 +1,253 @@
+Course: Practical Machine Learning
+Prediction Study Design - Alexandre Xavier Ywata de Carvalho
+========================================================
+
+1. Data Preparation for the Prediction Study Design
+
+To predict the outcome variable, I first imported the training data and the testing data. I extracted some summary statistics and noticed that, although the table is quite complex, in terms of possible predictive variables, some of these variables had several rows with missing data. I then decided to keep and use only the variables with no missing data for all rows. All the operations of columns extraction was done for both training and testing data.
+
+2. Selecting Training, Testing and Evaluation Samples
+
+I then focused only on the training data set. For this dataset, I separated the data into three subsets. The first dataset was used for training only; the second dataset was used for testing. The third one was used for validation of the final model. The training dataset had 60% of the observations; the testing and the validation datasets had each one of them 20% the observations in the original imported training table. Therefore, I had the mix 60%, 20%, 20% for the size of the training, testing and validation datasets. I reinforce that I am using now only the predicting variables with no missing data.
+
+3. Choosing the Model
+
+For the training sub dataset (60% of the original training imported dataset), I initially applied a principal component analysis to extract components explaining up to 95% of the total linear variation on the valid predictors (predictors with no missing data). Specifying the rotation for the principal components was done using exclusively the training sub dataset. I then applied the same rotation to the testing sub dataset (20% of the original training imported dataset). Using the training sub dataset for training and the testing sub dataset for evaluating the out-of-sample prediction error, I then tried several different models. When possible, I tried models with principal components compression or without it. The models tried were:
+
+    1.  Linear discriminant analysis
+    2.	Linear discriminant analysis to the principal components 
+    3.	Classification trees
+    4.	Classification trees to the principal components
+    5.	Boosting 
+    6.	Boosting to the principal components
+    7.	Random forests to the principal components
+    8.	Bagging with LDA for the principal components
+    9.	Regularized discriminant analysis
+
+Models 5, 7, 8 and 9 were not possible to train in the end, due to computer memory issues. I emphasize that each model was trained using only the training sub dataset (60% of the original training imported dataset). I used the testing sub dataset (20% of the original training imported dataset) to calculated out-of-sample prediction errors, for each model, and I found out that the best model, in terms of out-of-sample prediction, was the boosting applied to the principal components. 
+
+4. Refining the Model
+
+After selecting the best model, using 60% of the original sample for training, and 20% of the original sample for testing the out-of-sample performance for each tried model, I re-estimated the best model (boosting with PCA) to the 80% sub dataset, consisting of the training sub dataset plus the testing sub dataset. For this new trained model, I evaluated the out-of-sample performance using the validation sub dataset (the other 20% of the original sample, left out of the new training). The performance of the model in the validation sub dataset was very good: I obtained an accuracy of 83.43%. I was very careful in applying the principal components rotation, based only on the data used for training the model.
+
+5. Using the Final Model
+
+Finally, the last step would be to use the selected model (boosting with PCA) and trained it one more time, now using the whole training original data. In that way, I would be able to use all information in the provided training database. However, when trying to train this new model (with 100% of the original training data), I had again computer memory issues. I then decided to use the previous model, estimated with 80% of the original provided training sample. 
+
+I then applied the best available trained model to the provided testing dataset. Once again, I was very careful in applying the principal components rotation, based only on the data effectively used for training the model. The final predicted categories were:
+
+      Observation	Predicted Classe
+      1		        B
+      2		        A
+      3		        C
+      4		        A
+      5		        A
+      6		        E
+      7		        E
+      8		        D
+      9		        A
+      10		      A
+      11		      A
+      12		      C
+      13		      B
+      14		      A
+      15		      E
+      16		      E
+      17		      A
+      18		      B
+      19		      A
+      20		      B
+
+```{r}
+
+rm(list=ls());
+
+set.seed(2104);
+
+library(caret);
+library(ggplot2);
+
+#reading the data
+
+estimdata <- read.csv("C:/Alex/AulasWEB/PracticalMachineLearning/R_programs/pml-training.csv");
+testdata <- read.csv("C:/Alex/AulasWEB/PracticalMachineLearning/R_programs/pml-testing.csv");
+
+estimdata <- as.data.frame(estimdata);
+testdata <- as.data.frame(testdata);
+
+dim(estimdata);
+# names(estimdata);
+
+# names(testdata);
+dim(testdata);
+
+table(estimdata$classe);
+is.factor(estimdata$classe);
+
+estimdata <- subset(estimdata, select=-c(X, user_name, new_window));
+names(estimdata);
+
+testdata <- subset(testdata, select=-c(X, user_name, new_window));
+names(testdata);
+
+#excluding variables with missing data 
+
+indicator_numeric_columns <- sapply(estimdata, is.numeric);
+
+estimdata_num <- estimdata[,indicator_numeric_columns];
+
+names_num_columns_with_na <- names(estimdata_num[is.na(colMeans(estimdata_num))]);
+
+estimdata_valid <- estimdata_num[,!(names(estimdata_num) %in% names_num_columns_with_na)];
+
+testdata_num <- testdata[, indicator_numeric_columns];
+testdata_valid <- testdata_num[,!(names(testdata_num) %in% names_num_columns_with_na)];
+
+classe = estimdata$classe;
+estimdata_valid = data.frame(classe, estimdata_valid);
+
+dim(estimdata_valid); dim(testdata_valid);
+
+#creating samples for training, testing and evaluating the final model selected (60%, 20% and 20% in each sample)
+
+inTrain <- createDataPartition(y = estimdata_valid$classe, p=0.80, list=FALSE);
+
+training0 <- estimdata_valid[inTrain,];
+evaluating <- estimdata_valid[-inTrain,];
+
+inTrain1 <- createDataPartition(y = training0$classe, p = 0.75, list=FALSE);
+
+training <- training0[inTrain1,];
+testing <- training0[-inTrain1,];
+
+dim(training); dim(testing); dim(evaluating); dim(estimdata_valid);
+teste_dimensions <- dim(training)[1] + dim(testing)[1] + dim(evaluating)[1] - dim(estimdata_valid)[1];
+percentagem_training <- dim(training)[1] / dim(estimdata_valid)[1];
+percentagem_testing <- dim(testing)[1] / dim(estimdata_valid)[1];
+percentagem_evaluating <- dim(evaluating)[1] / dim(estimdata_valid)[1];
+
+teste_dimensions
+percentagem_training
+percentagem_testing
+percentagem_evaluating
+
+#creating principal components for data compression
+
+preObj <- preProcess(training[,-1], method = "pca", thresh=0.95);
+preObj
+
+training_pca <- data.frame(classe = training$classe, predict(preObj, training[,-1]));
+testing_pca <- data.frame(classe = testing$classe, predict(preObj, testing[,-1]));
+
+#linear discriminant analysis
+
+set.seed(2104);
+modFit1 <- train(classe ~ ., method="lda", data=training);
+preds <- predict(modFit1, newdata=testing);
+confusionMatrix(preds, testing$classe)
+
+#linear discriminant analysis com pca
+
+set.seed(2104);
+modFit2 <- train(classe ~ ., method="lda", data=training_pca);
+preds <- predict(modFit2, newdata=testing_pca);
+confusionMatrix(preds, testing_pca$classe)
+
+#classification trees
+
+set.seed(2104);
+modFit3 <- train(classe ~ ., method="rpart", data=training);
+preds <- predict(modFit3, newdata=testing);
+confusionMatrix(preds, testing$classe)
+
+#classification trees com pca
+
+set.seed(2104);
+modFit4 <- train(classe ~ ., method="rpart", data=training_pca);
+preds <- predict(modFit4, newdata=testing_pca);
+confusionMatrix(preds, testing_pca$classe)
+
+#boosting 
+
+#set.seed(2104);
+#modFit5 <- train(classe ~ ., method="gbm", data=training, verbose=FALSE);
+#preds <- predict(modFit5, newdata=testing);
+#confusionMatrix(preds, testing$classe)
+
+#boosting com pca
+
+set.seed(2104);
+modFit6 <- train(classe ~ ., method="gbm", data=training_pca, verbose=FALSE);
+preds <- predict(modFit6, newdata=testing_pca);
+confusionMatrix(preds, testing_pca$classe)
+
+#random forests com pca
+
+#set.seed(2104);
+#modFit6 <- train(classe ~ ., method="rf", data=training_pca, prox=TRUE);
+#preds <- predict(modFit6, newdata=testing_pca);
+#confusionMatrix(preds, testing_pca$classe)
+
+#bagging with lda com pca
+
+#set.seed(2104);
+#modFit7 <- train(classe ~ .,  
+#                method = "bag", 
+#                B = 10, 
+#                data = training_pca,
+#                bagControl = bagControl(fit = ldaBag$fit,
+#                                        predict = ldaBag$pred,
+#                                        aggregate = ldaBag$aggregate),
+#                tuneGrid = data.frame(vars = c((1:10)*10 , ncol(training_pca))));
+#preds <- predict(modFit7, newdata=testing_pca);
+#confusionMatrix(preds, testing_pca$classe)
+
+#regularized discriminant analysis com pca
+
+#set.seed(2104);
+#modFit8 <- train(classe ~ ., method="rda", data=training_pca);
+#preds <- predict(modFit8, newdata=testing_pca);
+#confusionMatrix(preds, testing_pca$classe)
+
+#-------------------------------------------------------------------------------------------------
+#training for testing + training sample the best model, to evaluate with evaluation sample
+#-------------------------------------------------------------------------------------------------
+
+training_eval <- estimdata_valid[inTrain,];
+percentagem_training_eval <- dim(training_eval)[1] / dim(estimdata_valid)[1];
+percentagem_training_eval
+
+preObj_eval <- preProcess(training_eval[,-1], method = "pca", thresh=0.95);
+preObj_eval
+
+training_eval_pca <- data.frame(classe = training_eval$classe, predict(preObj_eval, training_eval[,-1]));
+evaluating_pca <- data.frame(classe = evaluating$classe, predict(preObj_eval, evaluating[,-1]));
+
+#evaluating the out-of-sample performance for the chosen model
+
+set.seed(2104);
+modFit_eval <- train(classe ~ ., method="gbm", data=training_eval_pca, verbose=FALSE);
+preds <- predict(modFit_eval, newdata=evaluating_pca);
+confusionMatrix(preds, evaluating_pca$classe)
+
+#------------------------------------------------------------------------------------------------
+#finally, training the final model with all the data to be used with the provided testing data
+#------------------------------------------------------------------------------------------------
+
+#preObj <- preProcess(estimdata_valid[,-1], method = "pca", thresh=0.95);
+#preObj
+
+#training_final_pca <- data.frame(classe = estimdata_valid$classe, predict(preObj, estimdata_valid[,-1]));
+
+#set.seed(2104);
+#modFit_final <- train(classe ~ ., method="gbm", data=training_final_pca, verbose=FALSE);
+
+prediction_final_pca <- predict(preObj_eval, testdata_valid);
+preds <- predict(modFit_eval, newdata=prediction_final_pca);
+
+prediction_submitted_data <- predict(modFit_eval, newdata=prediction_final_pca);
+
+```
+
+
+
